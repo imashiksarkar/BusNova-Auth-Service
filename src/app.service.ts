@@ -2,7 +2,17 @@ import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class AppService {
-  getHello(): string {
-    return 'Hello World!';
+  getHome() {
+    return {
+      message: 'Welcome to the auth service of BusNova!',
+    };
+  }
+
+  getHealth() {
+    return {
+      status: 'OK',
+      uptime: process.uptime(),
+      message: 'Server is running healthy.',
+    };
   }
 }
