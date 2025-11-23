@@ -1,0 +1,35 @@
+services:
+  busnova-auth-psql-srv-dev:
+    image: postgres:16.8-alpine
+    container_name: busnova-auth-psql-db-dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - busnova-auth-dev-data:/var/lib/postgresql/data:rw
+    environment:
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: busnova-auth
+    command:
+      [
+        'postgres',
+        '-c',
+        'fsync=off',
+        '-c',
+        'full_page_writes=off',
+        '-c',
+        'synchronous_commit=off',
+      ]
+    restart: unless-stopped
+    # DATABASE_URL="postgres://devuser:devpassword@localhost:5432/busnova-auth"
+
+  mailhog-srv:
+    image: mailhog/mailhog:latest
+    container_name: mailhog
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # Web UI
+
+volumes:
+  busnova-auth-dev-data:
