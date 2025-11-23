@@ -1,17 +1,28 @@
 import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
-import { SigninDto } from './dtos/signin.dto';
-import { SignupDto } from './dtos/signup.dto';
+import * as NodeCache from 'node-cache';
 import { DbService } from '../db/db.service';
 import { KafkaService } from '../kafka/kafka.service';
+import { SigninDto } from './dtos/signin.dto';
+import { SignupDto } from './dtos/signup.dto';
+
+interface Role {
+  id: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 @Injectable()
 export class AuthService implements OnModuleInit {
+  private readonly cache: NodeCache;
   private readonly roles = ['user', 'admin', 'guide'];
 
   constructor(
     private readonly db: DbService,
     private readonly kafka: KafkaService,
-  ) {}
+  ) {
+    this.cache = new NodeCache();
+  }
 
   async onModuleInit() {
     try {
@@ -37,6 +48,20 @@ export class AuthService implements OnModuleInit {
     }
   }
 
+  async getDefaultRole() {
+    const cacheName = 'defaultRole';
+    const cachedRole = this.cache.get<Role | null>(cacheName);
+    if (cachedRole) return cachedRole;
+
+    const role = await this.db.role.findUnique({
+      where: { name: 'user' },
+    });
+
+    this.cache.set(cacheName, role, 60 * 10); // Cache for 10 minutes
+
+    return role;
+  }
+
   async signin(payload: SigninDto) {
     const user = await this.db.auth.findUnique({
       where: { email: payload.email },
@@ -51,21 +76,34 @@ export class AuthService implements OnModuleInit {
   }
 
   async signup(payload: SignupDto) {
-    const existingUser = await this.db.auth.findUnique({
-      where: { email: payload.email },
+    await this.db.$transaction(async (tx) => {
+      const existingUser = await tx.auth.findUnique({
+        where: { email: payload.email },
+      });
+
+      if (existingUser) throw new BadRequestException('User already exists');
+
+      const newUser = await tx.auth.create({
+        data: {
+          email: payload.email,
+          password: payload.password,
+        },
+      });
+
+      const role = await this.getDefaultRole();
+
+      if (!role) throw new BadRequestException('Default role not found');
+
+      await tx.authRole.create({
+        data: {
+          authId: newUser.id,
+          roleId: role.id,
+        },
+      });
+
+      await this.kafka.PUBLISH_AUTH_CREATED(payload);
+
+      return newUser;
     });
-
-    if (existingUser) throw new BadRequestException('User already exists');
-
-    const newUser = await this.db.auth.create({
-      data: {
-        email: payload.email,
-        password: payload.password,
-      },
-    });
-
-    await this.kafka.PUBLISH_AUTH_CREATED(payload);
-
-    return newUser;
   }
 }
