@@ -15,7 +15,10 @@ interface Role {
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly cache: NodeCache;
+
   private readonly roles = ['user', 'admin', 'guide'];
+  private readonly defaultRoleName = 'user';
+  private readonly adminRoleName = 'admin';
 
   constructor(
     private readonly db: DbService,
@@ -26,40 +29,75 @@ export class AuthService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      const existingRoles = await this.db.role
-        .findMany({
-          where: { name: { in: this.roles } },
-        })
-        .then((roles) => roles.map((role) => role.name));
-
-      const newRoles = this.roles.filter(
-        (role) => !existingRoles.includes(role),
-      );
-
-      if (newRoles.length < 1) return;
-
-      await this.db.role.createMany({
-        data: newRoles.map((role) => ({ name: role })),
-      });
-
-      console.log('Roles initialized:', newRoles);
+      await this.seedRoles();
     } catch (error) {
       console.error('Error initializing roles:', error);
     }
   }
 
-  async getDefaultRole() {
+  private async seedRoles() {
+    const existingRoles = await this.db.role
+      .findMany({
+        where: { name: { in: this.roles } },
+      })
+      .then((roles) => roles.map((role) => role.name));
+
+    const newRoles = this.roles.filter((role) => !existingRoles.includes(role));
+
+    if (newRoles.length < 1) return;
+
+    await this.db.role.createMany({
+      data: newRoles.map((role) => ({ name: role })),
+    });
+
+    console.log('Roles initialized:', newRoles);
+  }
+
+  private async getDefaultRole() {
     const cacheName = 'defaultRole';
     const cachedRole = this.cache.get<Role | null>(cacheName);
     if (cachedRole) return cachedRole;
 
     const role = await this.db.role.findUnique({
-      where: { name: 'user' },
+      where: { name: this.defaultRoleName },
     });
 
     this.cache.set(cacheName, role, 60 * 10); // Cache for 10 minutes
 
     return role;
+  }
+
+  private async createAdminIfNotExists(email: string, password: string) {
+    await this.db.$transaction(async (tx) => {
+      const existingAdmin = await tx.auth.findUnique({
+        where: { email },
+      });
+
+      if (existingAdmin) return;
+
+      const newAdmin = await tx.auth.create({
+        data: {
+          email,
+          password,
+        },
+      });
+
+      const adminRole = await tx.role.findUnique({
+        where: { name: this.adminRoleName },
+      });
+
+      if (!adminRole)
+        throw new BadRequestException('Admin role does not exist');
+
+      await tx.authRole.create({
+        data: {
+          authId: newAdmin.id,
+          roleId: adminRole.id,
+        },
+      });
+
+      console.log('Admin user created with email:', email);
+    });
   }
 
   async signin(payload: SigninDto) {
