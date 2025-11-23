@@ -2,12 +2,16 @@ import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { SigninDto } from './dtos/signin.dto';
 import { SignupDto } from './dtos/signup.dto';
 import { DbService } from '../db/db.service';
+import { KafkaService } from '../kafka/kafka.service';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly roles = ['user', 'admin', 'guide'];
 
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly kafka: KafkaService,
+  ) {}
 
   async onModuleInit() {
     try {
@@ -59,6 +63,8 @@ export class AuthService implements OnModuleInit {
         password: payload.password,
       },
     });
+
+    await this.kafka.PUBLISH_AUTH_CREATED(payload);
 
     return newUser;
   }

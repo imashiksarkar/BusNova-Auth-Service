@@ -64,8 +64,6 @@ describe('AuthController', () => {
 
     const result = await controller.signup(signupPayload);
 
-    console.log(result.user);
-
     expect(result).toEqual(response);
   });
 });
