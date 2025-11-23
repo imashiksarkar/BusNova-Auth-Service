@@ -7,11 +7,11 @@ import { DbModule } from './db/db.module';
 
 @Module({
   imports: [
-    AuthModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env'],
     }),
+    AuthModule,
     DbModule,
   ],
   controllers: [AppController],

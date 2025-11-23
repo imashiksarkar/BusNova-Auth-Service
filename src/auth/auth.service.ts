@@ -1,11 +1,37 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { SigninDto } from './dtos/signin.dto';
 import { SignupDto } from './dtos/signup.dto';
 import { DbService } from '../db/db.service';
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
+  private readonly roles = ['user', 'admin', 'guide'];
+
   constructor(private readonly db: DbService) {}
+
+  async onModuleInit() {
+    try {
+      const existingRoles = await this.db.role
+        .findMany({
+          where: { name: { in: this.roles } },
+        })
+        .then((roles) => roles.map((role) => role.name));
+
+      const newRoles = this.roles.filter(
+        (role) => !existingRoles.includes(role),
+      );
+
+      if (newRoles.length < 1) return;
+
+      await this.db.role.createMany({
+        data: newRoles.map((role) => ({ name: role })),
+      });
+
+      console.log('Roles initialized:', newRoles);
+    } catch (error) {
+      console.error('Error initializing roles:', error);
+    }
+  }
 
   async signin(payload: SigninDto) {
     const user = await this.db.auth.findUnique({
@@ -30,7 +56,7 @@ export class AuthService {
     const newUser = await this.db.auth.create({
       data: {
         email: payload.email,
-        password: payload.password, // In a real application, make sure to hash the password before storing it
+        password: payload.password,
       },
     });
 
